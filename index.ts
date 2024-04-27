@@ -9,6 +9,8 @@ import bodyParser from "body-parser";
 
 const app = express();
 
+app.use(bodyParser.json());
+
 app.use(
   cors({
     origin: "*",
@@ -18,43 +20,53 @@ app.use(
   }),
 );
 
-const sendSMS = () => {
-  const now = new Date();
+app.post("/send-sms", async (req, res) => {
+  try {
+    const {
+      message,
+      dayOfMonth = "*",
+      hour = "*",
+      minute = "*",
+      second = "*",
+      month = "*",
+      dayOfWeek = "*",
+    } = req.body;
 
-  const date = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-    21,
-    52,
-    0,
-  );
-
-  const job = schedule.scheduleJob(date, async () => {
-    try {
-      const client = new twilio.Twilio(
-        process.env.TWILIO_ACCOUNT_SID,
-        process.env.TWILIO_AUTH_TOKEN,
-      );
-      await client.messages.create({
-        body: "Hello from Twilio!",
-        from: process.env.TWILIO_PHONE_NUMBER,
-        to: process.env.PHONE_NUMBER,
-      });
-      console.log("SMS sent successfully!");
-    } catch (error) {
-      console.error("Error sending SMS:", error);
+    if (!message) {
+      return res.status(400).json({ error: "Message is required." });
     }
-  });
 
-  console.log("SMS scheduled at:", job.nextInvocation());
-};
+    const scheduleExpression = `${second} ${minute} ${hour} ${dayOfMonth} ${month} ${dayOfWeek}`;
 
-sendSMS();
+    const job = schedule.scheduleJob(scheduleExpression, async () => {
+      try {
+        const client = new twilio.Twilio(
+          process.env.TWILIO_ACCOUNT_SID,
+          process.env.TWILIO_AUTH_TOKEN,
+        );
+        await client.messages.create({
+          body: message,
+          from: process.env.TWILIO_PHONE_NUMBER,
+          to: process.env.PHONE_NUMBER,
+        });
+        console.log("SMS sent successfully!");
+      } catch (error) {
+        console.error("Error sending SMS:", error);
+      }
+    });
+
+    console.log("SMS scheduled at:", job.nextInvocation());
+
+    res.status(200).json({ message: "SMS has been scheduled." });
+  } catch (error) {
+    console.error("Error:", error);
+    res
+      .status(500)
+      .json({ error: "An error occurred while processing the request." });
+  }
+});
 
 app.options("*", cors());
-
-app.use(bodyParser.json());
 
 app.listen(process.env.PORT);
 
