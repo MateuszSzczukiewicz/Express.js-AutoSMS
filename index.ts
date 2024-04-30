@@ -5,7 +5,11 @@ import cors from "cors";
 import bodyParser from "body-parser";
 
 const app = express();
-let scheduledJob: Job | null = null;
+let scheduledJobs: { [id: string]: Job } = {};
+
+app.options("*", cors());
+
+app.use(bodyParser.json());
 
 app.use(
   cors({
@@ -16,8 +20,8 @@ app.use(
   }),
 );
 
-// Interface for the request body of /send-sms endpoint
 interface SendSMSRequestBody {
+  id: string;
   message: string;
   dayOfMonth?: string;
   hour?: string;
@@ -27,10 +31,10 @@ interface SendSMSRequestBody {
   dayOfWeek?: string;
 }
 
-// Handling POST request for sending SMS
 app.post("/send-sms", async (req: Request, res: Response) => {
   try {
     const {
+      id,
       message,
       dayOfMonth = "*",
       hour = "*",
@@ -40,15 +44,13 @@ app.post("/send-sms", async (req: Request, res: Response) => {
       dayOfWeek = "*",
     } = req.body as SendSMSRequestBody;
 
-    if (!message) {
-      return res.status(400).json({ error: "Message is required." });
+    if (!id || !message) {
+      return res.status(400).json({ error: "ID and message are required." });
     }
 
-    // Creating a schedule expression based on the provided values
     const scheduleExpression = `${second} ${minute} ${hour} ${dayOfMonth} ${month} ${dayOfWeek}`;
 
-    // Setting up a scheduled task to send SMS at the specified time and date
-    scheduledJob = schedule.scheduleJob(scheduleExpression, async () => {
+    scheduledJobs[id] = schedule.scheduleJob(scheduleExpression, async () => {
       try {
         const client = new twilio.Twilio(
           process.env.TWILIO_ACCOUNT_SID!,
@@ -65,7 +67,7 @@ app.post("/send-sms", async (req: Request, res: Response) => {
       }
     });
 
-    console.log("SMS scheduled at:", scheduledJob.nextInvocation());
+    console.log("SMS scheduled at:", scheduledJobs[id].nextInvocation());
 
     res.status(200).json({ message: "SMS has been scheduled." });
   } catch (error) {
@@ -76,15 +78,18 @@ app.post("/send-sms", async (req: Request, res: Response) => {
   }
 });
 
-// Canceling scheduled SMS
-app.post("/cancel-sms", async (req: Request, res: Response) => {
+app.delete("/cancel-sms/:id", async (req: Request, res: Response) => {
   try {
-    if (!scheduledJob) {
-      return res.status(400).json({ error: "No SMS scheduled to cancel." });
+    const id = req.params.id;
+
+    if (!scheduledJobs[id]) {
+      return res
+        .status(400)
+        .json({ error: "No SMS scheduled with the provided ID." });
     }
 
-    scheduledJob.cancel();
-    console.log("SMS scheduled at:", scheduledJob.nextInvocation());
+    scheduledJobs[id].cancel();
+    console.log("SMS with ID", id, "canceled.");
 
     res.status(200).json({ message: "Scheduled SMS has been canceled." });
   } catch (error) {
@@ -95,10 +100,6 @@ app.post("/cancel-sms", async (req: Request, res: Response) => {
   }
 });
 
-app.options("*", cors());
-
-app.use(bodyParser.json());
-
-app.listen(process.env.PORT);
+app.listen(3000);
 
 module.exports = app;
